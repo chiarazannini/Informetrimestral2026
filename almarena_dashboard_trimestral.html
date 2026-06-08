@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Almarena CDE — Informe Trimestral Q2 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  * { font-family: 'Inter', sans-serif; }
+  body { background: #fdf5f5; }
+  .kpi-card { background:#fff; border-radius:12px; box-shadow:0 2px 12px rgba(250,87,95,.08); transition:transform .15s; }
+  .kpi-card:hover { transform:translateY(-2px); box-shadow:0 6px 24px rgba(250,87,95,.18); }
+  .chart-card { background:#fff; border-radius:12px; box-shadow:0 2px 12px rgba(250,87,95,.08); }
+  .narrative { background:linear-gradient(135deg,#fff5f5,#fff0f0); border-left:4px solid #FA575F; border-radius:0 8px 8px 0; }
+  .badge-up   { background:#d1fae5; color:#065f46; border-radius:20px; padding:2px 10px; font-size:.75rem; font-weight:700; }
+  .badge-dn   { background:#fee2e2; color:#991b1b; border-radius:20px; padding:2px 10px; font-size:.75rem; font-weight:700; }
+  .badge-neu  { background:#fef3c7; color:#92400e; border-radius:20px; padding:2px 10px; font-size:.75rem; font-weight:700; }
+  .filter-btn { border-radius:20px; padding:5px 16px; font-size:.78rem; font-weight:600; cursor:pointer; border:2px solid transparent; transition:all .15s; }
+  .filter-btn.active { background:#FA575F; color:#fff; border-color:#FA575F; }
+  .filter-btn:not(.active) { background:#fff; color:#FA575F; border-color:#fca5a8; }
+  .section-title { font-size:1rem; font-weight:700; color:#0f2540; letter-spacing:.02em; text-transform:uppercase; }
+  .infl-badge { background:#fff5f5; border:1px solid #FA575F; color:#c0272d; border-radius:6px; padding:2px 8px; font-size:.7rem; font-weight:700; }
+  .data-note  { font-size:.7rem; color:#94a3b8; font-style:italic; }
+  .loader-overlay { position:fixed; inset:0; background:rgba(15,37,64,.75); z-index:999; display:flex; align-items:center; justify-content:center; }
+  .spinner { width:46px; height:46px; border:5px solid rgba(255,255,255,.2); border-top-color:#FA575F; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg) } }
+  canvas { max-height:310px; }
+  .upload-zone { border:2px dashed #fca5a8; border-radius:10px; transition:border-color .2s,background .2s; cursor:pointer; }
+  .upload-zone:hover,.upload-zone.drag { border-color:#FA575F; background:#fff5f5; }
+</style>
+</head>
+<body>
+
+<div id="loader" class="loader-overlay" style="display:none">
+  <div class="text-center">
+    <div class="spinner mx-auto mb-4"></div>
+    <p class="text-white font-semibold text-sm">Procesando Excel…</p>
+  </div>
+</div>
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════ -->
+<header style="background:#0f2540;border-bottom:3px solid #FA575F" class="text-white px-6 py-4 sticky top-0 z-50 shadow-xl">
+  <div class="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <div class="flex items-center gap-3">
+        <span class="text-2xl font-black tracking-tight" style="color:#FA575F">ALMARENA</span>
+        <span class="text-xs border border-white/30 rounded px-2 py-0.5 text-white/60">COSTA DEL ESTE · 59 hab.</span>
+      </div>
+      <div class="text-xs text-white/50 mt-0.5">Informe Trimestral · Marzo — Mayo 2026 vs 2025</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div id="uploadZone" class="upload-zone flex items-center gap-2 px-4 py-2 bg-white/5 text-white"
+           onclick="document.getElementById('fileInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleDrop(event)">
+        <svg class="w-4 h-4 shrink-0" style="color:#FA575F" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        <span id="uploadLabel" class="text-xs font-medium">Cargar / Actualizar Excel</span>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFile(this.files[0])">
+    </div>
+  </div>
+</header>
+
+<!-- ══ FILTROS ══════════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 pt-5 pb-2 flex flex-wrap items-center gap-2">
+  <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mes:</span>
+  <button class="filter-btn active" onclick="setMes('todos',this)">Trimestre</button>
+  <button class="filter-btn" onclick="setMes(0,this)">Marzo</button>
+  <button class="filter-btn" onclick="setMes(1,this)">Abril</button>
+  <button class="filter-btn" onclick="setMes(2,this)">Mayo</button>
+  <span class="mx-2 text-slate-300">|</span>
+  <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Comparar vs:</span>
+  <button class="filter-btn active" id="btnLY"  onclick="setComp('ly',this)">2025 nominal</button>
+  <button class="filter-btn"        id="btnInf" onclick="setComp('inf',this)">2025 ajustado inflación</button>
+  <span class="infl-badge ml-auto">Factor inflación: Mar ×1.443 · Abr ×1.392 · May ×1.354</span>
+</div>
+
+<!-- ══ KPI CARDS ════════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 pt-3 pb-2">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4" id="kpiGrid"></div>
+</div>
+
+<!-- ══ NARRATIVE 1 ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-2">
+  <div class="narrative p-4"><p class="text-sm text-slate-700 leading-relaxed" id="narrativeKpi"></p></div>
+</div>
+
+<!-- ══ ROW 1: Revenue + OCC/ADR ═══════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3 grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Revenue Total por Mes</span>
+      <span class="text-xs text-slate-400">ARS millones</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">2026 real · 2025 nominal · 2025 ajustado por inflación</p>
+    <canvas id="cRevenue"></canvas>
+  </div>
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Ocupación & ADR</span>
+      <span class="text-xs text-slate-400">OCC % · ADR ARS</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Evolución mensual 2026 vs 2025</p>
+    <canvas id="cOccAdr"></canvas>
+  </div>
+</div>
+
+<!-- ══ NARRATIVE 2 ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-1">
+  <div class="narrative p-4">
+    <p class="text-sm text-slate-700 leading-relaxed">
+      <strong>🗓 Marzo 2026:</strong> Cerramos con <strong>52% de ocupación (945 noches)</strong>, a solo –1pp del objetivo con –47 RN sobre budget. ADR con desvío de –$11.952 y RevPAR de –$7.592 vs presupuesto.
+      Dato clave: <em>en Marzo 2025 la ocupación fue 53% impulsada por el efecto Carnaval</em>; que en 2026, sin ese impulso, hayamos equiparado prácticamente ese nivel es una performance destacable.
+      <br><br>
+      <strong>🗓 Abril 2026:</strong> El mejor mes del trimestre. <strong>OCC 39.4% vs 29.7% budget (+9.7pp · +33% sobre meta)</strong>.
+      698 RN vs 530 budget (+168 · +32%) y vs 517 LY (+181 RN · +35%). Revenue <strong>$134.8M vs $124.3M (+$10.5M · +8.5%)</strong>. RevPAR $76.179 vs $70.231 (+$5.947 · +8.5%).
+      El mes contó con <strong>2 fines de semana largo</strong>: <em>Semana Santa / Pascua</em> (Jueves y Viernes Santo 2–3 Abril) + puente 30/4 por feriado del 1° de Mayo.
+      ⚠️ <em>Nota RM:</em> Abril 2025 era base baja (OCC 29.2%, sin feriados equivalentes) — el salto de +35% en RN responde principalmente al efecto calendario, no a una mejora estructural de demanda. La comparación de ADR vs 2025 no es válida por ajustes tarifarios aplicados ese año. <strong>RevPAR ajustado por inflación: +14%</strong>.
+      <br><br>
+      <strong>🗓 Mayo 2026:</strong> Cerramos <strong>por debajo del año pasado</strong>, resultado que requiere contexto. En mayo 2025 hubo dos eventos propios (Comadres de Bettina + Experiencia Bienestar) que traccionaron demanda de forma significativa.
+      535 RN vs 609 en 2025 (–74 noches · –12.2%). Revenue $84.3M vs $87.3M (–$3.0M · –3.5%). El <strong>grupo Santillana Kapeluz</strong> aportó positivamente: producción total Rooms + A&B + Salón = <strong>$22.4M sin IVA</strong>, con excelentes comentarios de todo el equipo.
+    </p>
+  </div>
+</div>
+
+<!-- ══ ROW 2: RevPAR + Inflación ══════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3 grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">RevPAR Mensual</span>
+      <span class="infl-badge">2026 vs 2025</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Revenue por habitación disponible — 59 habitaciones</p>
+    <canvas id="cRevpar"></canvas>
+  </div>
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">ADR Ajustado por Inflación</span>
+      <span class="infl-badge">Poder adquisitivo real</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">ADR 2025 actualizado al valor de pesos 2026 (factores del Excel)</p>
+    <canvas id="cInflacion"></canvas>
+  </div>
+</div>
+
+<!-- ══ NARRATIVE 3 ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-1">
+  <div class="narrative p-4">
+    <p class="text-sm text-slate-700 leading-relaxed">
+      <strong>RevPAR & ADR — erosión real en los tres meses:</strong>
+      El RevPAR trimestral 2026 promedia <strong>$81,650 ARS</strong> vs $68,779 en 2025 (+18.7% nominal).
+      Al ajustar el ADR 2025 por inflación (factores del Excel), los ADR en pesos de hoy superan a los de 2026 en los tres meses: Marzo ($294k vs $235k, <strong>–20% real</strong>), Abril ($244k vs $193k, <strong>–21% real</strong>), Mayo ($195k vs $157k, <strong>–19% real</strong>).
+      <strong>La suba tarifaria en pesos no logró compensar la devaluación del período en ningún mes.</strong>
+      <br>
+      📌 <em>Nota RM — RevPAR Mayo:</em> la caída de RevPAR es mínima (–$666 · –1.4%) con ADR +9.1% y 74 RN menos. Esto es un <em>mix shift deliberado</em>: menos volumen a mayor precio unitario. La estrategia de rate sostuvo el RevPAR casi plano ante demanda más débil — no es estancamiento.
+      <br><br>
+      En Mayo, dolarizando con TC BNA venta: ADR <strong>USD 118.77 (2025) → USD 110.14 (2026) (–7.3%)</strong>. Room revenue USD: <strong>$71.858 → $58.996 (–17.9%)</strong>. La suba en pesos no compensó la devaluación.
+      <br><br>
+      <strong>⚠️ Contexto estructural — válido para todo el trimestre:</strong> Desde <strong>Marzo 2026</strong> operamos con <strong>116 unidades</strong> (59 hab. hotel + 57 deptos. La Reserva). La demanda del destino se distribuye entre ambas propiedades desde el inicio de la temporada. Comparar solo el hotel 2026 vs hotel 2025 es comparar realidades operativas distintas.
+      Consolidando CDE + La Reserva en Mayo: <strong>839 RN vs 609 en 2025 (+37.8%)</strong>, revenue USD <strong>$84.807 vs $71.858 (+18% real)</strong>. El crecimiento del destino es real.
+    </p>
+  </div>
+</div>
+
+<!-- ══ ROW 3: Canal + Promo ════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3 grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Noches por Canal de Origen</span>
+      <span class="text-xs text-slate-400">RN trimestre · 2026 vs 2025</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Distribución por canal — fuente: back reservas canal</p>
+    <canvas id="cCanal"></canvas>
+  </div>
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Noches por Promoción / Segmento</span>
+      <span class="text-xs text-slate-400">RN 2026 Mar–May</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Ranking de room nights por origen tarifario 2026</p>
+    <canvas id="cPromo"></canvas>
+  </div>
+</div>
+
+<!-- ══ NARRATIVE 4 ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-1">
+  <div class="narrative p-4">
+    <p class="text-sm text-slate-700 leading-relaxed">
+      <strong>Canales & Promociones 2026:</strong>
+      El canal directo domina: <strong>WhatsApp (490 RN) + Teléfono (415 RN) + E-mail (218 RN) + Sitio Web (294 RN) = 1,417 RN (65% del total)</strong>.
+      Booking.com creció de 77 RN (2025) a <strong>386 RN (2026) (+401%)</strong>. ⚠️ <em>Alerta RM:</em> a una comisión promedio del 15%, este crecimiento implica aprox. <strong>$11.9M ARS en comisiones OTA</strong> vs $2.4M en 2025 (+$9.5M de costo de distribución). El revenue neto de Booking.com baja sensiblemente respecto a lo que indica el bruto.
+      <strong>BOOKONLINENOW</strong> (202 RN) es el <strong>motor de reservas directo propio</strong> — debe ser la prioridad de crecimiento para reducir la dependencia OTA.
+      Mix canal directo (WhatsApp + Teléfono + Email + Sitio Web + BookOnlineNow) = <strong>1.619 RN = 74% del total</strong> — fortaleza estructural a mantener.
+      El segmento de <strong>Grupos</strong> (Asociaciones + Allaria + Santillana + Magistrados) aportó <strong>197 RN</strong> cero comisión de distribución — canal de alto valor neto.
+      <strong>Promo Bosque 10%</strong> aceleró en Mayo (86 de 135 RN), mostrando efectividad en baja.
+      En Mayo: estrategia agresiva de volumen — <strong>2×1 Hotsale, 3×2 todo el mes, last minute, variación por categoría</strong>.
+      Referencia competitiva: Cariló, Pinamar y Mar de las Pampas posicionan Junio entre semana a <strong>~$110.000 con IVA</strong>, comprimiendo el rango de captación individual.
+    </p>
+  </div>
+</div>
+
+<!-- ══ ROW GRUPOS ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3">
+  <div class="flex items-center gap-3 mb-1 px-1">
+    <span class="section-title">Segmento Grupos — Comparativo 2026 vs 2025</span>
+    <span class="infl-badge">Fuente: DATOS GRUPO 2025.xls · GRUPOS TRIMESTRE 2026.xls</span>
+  </div>
+</div>
+
+<!-- KPI mini de grupos -->
+<div class="max-w-screen-2xl mx-auto px-6 pb-2">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="grupoKpiGrid"></div>
+</div>
+
+<!-- Gráficos grupos -->
+<div class="max-w-screen-2xl mx-auto px-6 py-2 grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Room Nights por Grupo</span>
+      <span class="text-xs text-slate-400">2026 vs 2025</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Comparativo de noches por grupo — trimestre Mar–May</p>
+    <canvas id="cGrupos"></canvas>
+  </div>
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Evolución Mensual — Grupos</span>
+      <span class="text-xs text-slate-400">RN por mes</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Distribución mensual de RN de grupos 2026 vs 2025</p>
+    <canvas id="cGruposMes"></canvas>
+  </div>
+</div>
+
+<!-- Narrative grupos -->
+<div class="max-w-screen-2xl mx-auto px-6 py-1">
+  <div class="narrative p-4">
+    <p class="text-sm text-slate-700 leading-relaxed">
+      <strong>Segmento Grupos 2026 vs 2025:</strong>
+      El segmento grupos creció de <strong>85 RN (3 grupos)</strong> en 2025 a <strong>209 RN (5 grupos)</strong> en 2026 —
+      <strong>+146% en room nights</strong> y +67% en cantidad de grupos.
+      En 2025 toda la actividad grupal se concentró en Marzo (Allaria ×2 + B-Life).
+      En 2026 se distribuyó los tres meses: <strong>GRANIX/Adventistas en Marzo (58 RN) · Magistrados + Yoga + Allaria en Abril (101 RN) · Santillana Kapeluz en Mayo (50 RN)</strong>.
+      <strong>Allaria</strong> se consolidó como grupo recurrente con 44 RN en ambos años.
+      Las nuevas <strong>Asociaciones</strong> (Magistrados 45 RN + Adventistas 58 RN) suman 103 RN que en 2025 eran cero — principal driver del crecimiento.
+      Highlight: <strong>Santillana Kapeluz generó $22.4M sin IVA</strong> entre Rooms + A&B + Salón, con excelentes comentarios del equipo en todas las áreas. 🏆
+    </p>
+  </div>
+</div>
+
+<!-- ══ ROW 4: Promo por mes (barras apiladas) + SPA ═══════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3 grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">Promo Top 8 — Evolución Mensual</span>
+      <span class="text-xs text-slate-400">Room Nights 2026</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Noches por promo desglosadas Marzo · Abril · Mayo 2026</p>
+    <canvas id="cPromoMes"></canvas>
+  </div>
+  <div class="chart-card p-5">
+    <div class="flex items-center justify-between mb-1">
+      <span class="section-title">SPA — Ingresos & Tratamientos</span>
+      <span class="text-xs text-slate-400">2026 vs 2025</span>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Ingresos netos y cantidad de tratamientos mensual</p>
+    <canvas id="cSpa"></canvas>
+  </div>
+</div>
+
+<!-- ══ NARRATIVE 5 ══════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-1">
+  <div class="narrative p-4">
+    <p class="text-sm text-slate-700 leading-relaxed">
+      <strong>SPA 2026 vs 2025:</strong>
+      Marzo 2026 fue el mes récord: <strong>146 tratamientos</strong> (vs 107 en 2025, +36%) con ingresos de <strong>$3.17M</strong> (vs $1.24M, +156%).
+      Ticket promedio por tratamiento: <strong>$21.680 en 2026 vs $11.558 en 2025</strong> (+87% nominal · supera la inflación del período de ~40%).
+      Abril 2026: 107 tratamientos (igual a 2025) con <strong>$1.45M</strong> (vs $0.85M, +71%). Ticket $13.510 vs $9.828 (+37%).
+      Mayo 2026 sin cierre definitivo (dato pendiente).
+      <br>
+      📌 <em>TRevPAR (Rooms + Spa):</em> Marzo $123.760 vs $122.498 solo rooms. Abril $76.994 vs $76.179. El Spa aporta <strong>+$1.262 y +$815 de TRevPAR</strong> respectivamente — revenue incremental de alta rentabilidad, sin costo de distribución.
+      El Spa es un <strong>motor estratégico en temporada baja</strong>: las tarifas por tratamiento crecen por encima de la inflación, no tiene comisión OTA, y aporta diferenciación de producto frente a la competencia.
+    </p>
+  </div>
+</div>
+
+<!-- ══ TABLA RESUMEN ════════════════════════════════════════════════ -->
+<div class="max-w-screen-2xl mx-auto px-6 py-3">
+  <div class="chart-card p-5">
+    <span class="section-title block mb-4">Resumen Ejecutivo — Marzo · Abril · Mayo 2026 vs 2025</span>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr style="background:#0f2540;border-bottom:2px solid #FA575F" class="text-white">
+            <th class="px-4 py-3 text-left rounded-tl-lg">Métrica</th>
+            <th class="px-4 py-3 text-right">Mar 2026</th>
+            <th class="px-4 py-3 text-right">Mar 2025</th>
+            <th class="px-4 py-3 text-right" style="color:#fc8287">Δ%</th>
+            <th class="px-4 py-3 text-right">Abr 2026</th>
+            <th class="px-4 py-3 text-right">Abr 2025</th>
+            <th class="px-4 py-3 text-right" style="color:#fc8287">Δ%</th>
+            <th class="px-4 py-3 text-right">May 2026</th>
+            <th class="px-4 py-3 text-right">May 2025</th>
+            <th class="px-4 py-3 text-right rounded-tr-lg" style="color:#fc8287">Δ%</th>
+          </tr>
+        </thead>
+        <tbody id="resumenBody"></tbody>
+      </table>
+    </div>
+    <p class="data-note mt-3">Fuente: Excel "Datos para informe trimestral Almarena.xlsx" — hojas: datos 2025 cde · back reservas canal · back reservas promo · Tratamientos Spa</p>
+  </div>
+</div>
+
+<footer style="background:#0f2540;border-top:3px solid #FA575F" class="text-white/40 text-xs text-center py-4 mt-6">
+  Almarena Costa del Este · Revenue Management · Informe Trimestral Q2 2026 vs 2025 · <span id="footerDate"></span>
+</footer>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// DATOS — 100% desde Excel "Datos para informe trimestral Almarena"
+// ══════════════════════════════════════════════════════════════════
+let D = {
+  meses: ['Marzo','Abril','Mayo'],
+
+  // ── Hoja: datos 2025 cde ──────────────────────────────────────
+  ly: {                     // 2025 valores nominales
+    rev:    [202536159, 90912023,  87308246],
+    revAdj: [292360734, 126513909, 118211443], // ajustado inflación
+    adr:    [204170,    175845,    144311],
+    adrAdj: [294718,    244708,    195391],
+    rn:     [992,       517,       609],
+    occ:    [54.20,     29.20,     33.30],
+    revpar: [108890,    50507,     46940],
+    revparAdj:[157182,  70285,     63554],
+    inflFactor:[1.443,  1.392,     1.354]  // factores calculados del Excel
+  },
+  cur: {                    // 2026 real
+    rev:    [223191643, 134836370, 84264090],
+    adr:    [235186,    193175,    157503],
+    rn:     [949,       698,       535],
+    occ:    [51.89,     39.49,     29.25],
+    revpar: [122498,    76179,     46274],
+  },
+
+  // ── Hoja: back reservas canal → filtrado Mar-May 2026 ─────────
+  canal2026: {
+    labels: ['WhatsApp','Teléfono','Booking.com','Sitio Web','E-Mail','Walk In','Almarena','Allaria','Cliente','Otros'],
+    mar:    [180, 198, 222, 136,  97, 72,  6,  2, 14, 22],
+    abr:    [147, 144, 103,  75,  43, 44, 55, 51, 26, 10],
+    may:    [163,  73,  61,  83,  78, 30,  9,  3,  2, 33],
+  },
+  canal2025: {               // Mar-May 2025 (filtrado del Excel)
+    labels: ['WhatsApp','Teléfono','Booking.com','Sitio Web','E-Mail','Walk In','Almarena','Cliente','Instagram','Otros'],
+    total:  [615, 542, 77, 302, 262, 127, 38, 68, 24, 59],
+  },
+
+  // ── Hoja: back reservas promo → Noches por promo Mar-May 2026 ─
+  promoTotal: {
+    labels: ['Sin promo (directo)','Booking.com','Promo 3×2','BookOnlineNow','Grupos Corp.','Promo Bosque 10%','Compra Anticipada','Last Minute','Promo Mar 20%','Iguala OTA','Otros'],
+    total:  [475, 336, 214, 202, 248, 135, 124, 86, 74, 67, 221],
+  },
+  // Desglose mensual top 8 promos (hoja: datos 2025 cde → pivot)
+  promoMes: {
+    labels: ['Sin promo','Booking.com','Promo 3×2','BookOnlineNow','Grupos Corp.','Promo Bosque','Comp.Anticipada','Last Minute'],
+    mar:    [243, 196, 0,   129, 57,  18, 102, 35],
+    abr:    [143,  84, 85,   58, 138,  31,  16, 37],
+    may:    [ 89,  56, 129,  15,  53,  86,   6, 14],
+  },
+
+  // ── Archivos GRUPOS 2025 y 2026 ──────────────────────────────
+  // Fuente: DATOS GRUPO 2025.xls + GRUPOS TRIMESTRE 2026.xls
+  grupos: {
+    // Grupos 2025 — todos en Marzo
+    g2025: [
+      { nombre:'Allaria',         org:'ALLARIA SA',            mes:3, rn:44 },
+      { nombre:'Allaria Fondos',  org:'ALLARIA FONDOS',        mes:3, rn:12 },
+      { nombre:'B-Life',          org:'B-LIFE',                mes:3, rn:29 },
+    ],
+    // Grupos 2026 — distribuidos Mar/Abr/May
+    g2026: [
+      { nombre:'GRANIX / Adventistas', org:'Asoc. Adventistas',      mes:3, rn:58 },
+      { nombre:'A.M.A.T.R.A.',         org:'Asoc. Magistrados',      mes:4, rn:45 },
+      { nombre:'Yoga (Cajes)',          org:'MARISA GILDA CAJES',     mes:4, rn:12 },
+      { nombre:'Allaria',              org:'ALLARIA SA',              mes:4, rn:44 },
+      { nombre:'Santillana Kapeluz',   org:'EDICIONES SANTILLANA',   mes:5, rn:50 },
+    ],
+  },
+
+  // ── Hoja: datos 2025 cde → Tratamientos SPA ──────────────────
+  spa: {
+    ingr2025:    [1236655, 845200,  1237769],
+    ingr2026:    [3165222, 1445605, 0],
+    ingrAdj2025: [1785110, 1176185, 1675882],
+    trat2025:    [107, 86,  111],
+    trat2026:    [146, 107, 0],
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// ESTADO Y COLORES
+// ══════════════════════════════════════════════════════════════════
+let mesIdx = null; // null = todos
+let compMode = 'ly'; // 'ly' | 'inf'
+let CHARTS = {};
+
+const C = { navy:'#0f2540', gold:'#FA575F', goldL:'#fc8287', teal:'#0d7377', tealL:'#14a085',
+            red:'#dc2626', green:'#059669', blue:'#2563eb', purple:'#7c3aed', orange:'#ea580c' };
+const MCOLS = ['#0f2540','#FA575F','#0d7377']; // por mes
+
+function rgba(hex,a){ const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return `rgba(${r},${g},${b},${a})`; }
+
+// ══════════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════════
+function fmt(v,t='ars'){
+  if(t==='M')  return '$'+( v/1e6).toFixed(1)+'M';
+  if(t==='k')  return '$'+(v/1000).toFixed(0)+'k';
+  if(t==='pct')return v.toFixed(1)+'%';
+  if(t==='rn') return v.toLocaleString('es-AR');
+  return '$'+Number(v).toLocaleString('es-AR');
+}
+function diff(a,b){ return ((a-b)/b*100); }
+function badge(d){ const s=d>=0?'▲':'▼',cl=d>=0?'badge-up':'badge-dn'; return `<span class="${cl}">${s} ${Math.abs(d).toFixed(1)}%</span>`; }
+function badgePp(d){ const s=d>=0?'+':'',cl=d>=0?'badge-up':'badge-dn'; return `<span class="${cl}">${s}${d.toFixed(1)} pp</span>`; }
+
+function getIdx(){ return mesIdx===null ? [0,1,2] : [mesIdx]; }
+function sum(arr,idxs){ return idxs.reduce((s,i)=>s+arr[i],0); }
+function avg(arr,idxs){ return sum(arr,idxs)/idxs.length; }
+function getLY_rev(i){ return compMode==='inf' ? D.ly.revAdj[i] : D.ly.rev[i]; }
+function getLY_adr(i){ return compMode==='inf' ? D.ly.adrAdj[i] : D.ly.adr[i]; }
+function getLY_revpar(i){ return compMode==='inf' ? D.ly.revparAdj[i] : D.ly.revpar[i]; }
+function compLabel(){ return compMode==='inf' ? '2025 ajust. infl.' : '2025 nominal'; }
+
+// ══════════════════════════════════════════════════════════════════
+// KPI CARDS
+// ══════════════════════════════════════════════════════════════════
+function buildKPIs(){
+  const idx = getIdx();
+  const rev26 = sum(D.cur.rev,idx);
+  const revLY = idx.reduce((s,i)=>s+getLY_rev(i),0);
+  const occ26 = avg(D.cur.occ,idx);
+  const occLY = avg(D.ly.occ,idx);
+  const adr26 = avg(D.cur.adr,idx);
+  const adrLY = idx.reduce((s,i)=>s+getLY_adr(i),0)/idx.length;
+  const rp26  = avg(D.cur.revpar,idx);
+  const rpLY  = idx.reduce((s,i)=>s+getLY_revpar(i),0)/idx.length;
+  const rn26  = sum(D.cur.rn,idx);
+  const rnLY  = sum(D.ly.rn,idx);
+
+  const kpis = [
+    { icon:'💰', label:'Revenue Total',   val:fmt(rev26,'M'), sub:`${compLabel()}: ${fmt(revLY,'M')}`, bd:badge(diff(rev26,revLY)), border:'border-l-4',  borderColor:'border-rose-400' },
+    { icon:'🛏️', label:'Ocupación Prom.', val:fmt(occ26,'pct'), sub:`${compLabel()}: ${fmt(occLY,'pct')}`, bd:badgePp(occ26-occLY), border:'border-l-4', borderColor:'border-blue-500' },
+    { icon:'📊', label:'RevPAR Prom.',    val:fmt(rp26,'k'),  sub:`${compLabel()}: ${fmt(rpLY,'k')}`,   bd:badge(diff(rp26,rpLY)), border:'border-l-4',  borderColor:'border-teal-500' },
+    { icon:'🏷️', label:'ADR Prom.',       val:fmt(adr26,'k'), sub:`${compLabel()}: ${fmt(adrLY,'k')}`,  bd:badge(diff(adr26,adrLY)), border:'border-l-4', borderColor:'border-purple-500' },
+    { icon:'🛎️', label:'Room Nights',     val:fmt(rn26,'rn')+'  RN', sub:`${compLabel()}: ${fmt(rnLY,'rn')} RN`, bd:badge(diff(rn26,rnLY)), border:'border-l-4', borderColor:'border-red-500' },
+  ];
+  document.getElementById('kpiGrid').innerHTML = kpis.map(k=>`
+    <div class="kpi-card p-4 ${k.border} ${k.borderColor}">
+      <div class="flex items-start justify-between mb-1"><span class="text-xl">${k.icon}</span>${k.bd}</div>
+      <div class="text-2xl font-black text-slate-800 mt-1 leading-tight">${k.val}</div>
+      <div class="text-xs font-semibold text-slate-500 mt-0.5">${k.label}</div>
+      <div class="text-xs text-slate-400 mt-1">${k.sub}</div>
+    </div>`).join('');
+
+  // Narrative KPI
+  const dRev=diff(rev26,revLY), dOcc=occ26-occLY, dRN=diff(rn26,rnLY);
+  document.getElementById('narrativeKpi').innerHTML =
+    `<strong>Resultado ${idx.length===3?'Trimestral (Mar–May)':D.meses[idx[0]]} 2026 vs ${compLabel()}:</strong> ` +
+    `Revenue <strong>${fmt(rev26,'M')}</strong> <span class="${dRev>=0?'text-green-700':'text-red-700'} font-bold">(${dRev>=0?'▲':'▼'} ${Math.abs(dRev).toFixed(1)}%)</span>. ` +
+    `Ocupación promedio <strong>${fmt(occ26,'pct')}</strong> <span class="${dOcc>=0?'text-green-700':'text-red-700'} font-bold">(${dOcc>=0?'+':''}${dOcc.toFixed(1)} pp)</span>. ` +
+    `ADR <strong>${fmt(adr26,'k')}</strong>. RevPAR <strong>${fmt(rp26,'k')}</strong>. ` +
+    `Room Nights <strong>${fmt(rn26,'rn')}</strong> <span class="${dRN>=0?'text-green-700':'text-red-700'} font-bold">(${dRN>=0?'▲':'▼'} ${Math.abs(dRN).toFixed(1)}%)</span>.`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// GRÁFICOS
+// ══════════════════════════════════════════════════════════════════
+function dc(id){ if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];} }
+const baseOpts = { responsive:true, maintainAspectRatio:true,
+  plugins:{ legend:{labels:{font:{size:11},boxWidth:12}}, tooltip:{cornerRadius:8,padding:10,boxPadding:4,titleFont:{size:12},bodyFont:{size:11}} },
+  scales:{ x:{grid:{display:false},ticks:{font:{size:11}}}, y:{grid:{color:'#f1f5f9'},ticks:{font:{size:11}}} }
+};
+
+function buildRevenue(){
+  dc('rev');
+  const idx=getIdx(), labs=idx.map(i=>D.meses[i]);
+  const r26  = idx.map(i=>D.cur.rev[i]/1e6);
+  const rLY  = idx.map(i=>D.ly.rev[i]/1e6);
+  const rAdj = idx.map(i=>D.ly.revAdj[i]/1e6);
+  CHARTS['rev'] = new Chart(document.getElementById('cRevenue'),{
+    type:'bar', data:{labels:labs, datasets:[
+      {label:'Revenue 2026', data:r26, backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.85)), borderRadius:6},
+      {label:'Revenue 2025 nominal', data:rLY, backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.3)), borderWidth:2, borderColor:idx.map((_,j)=>MCOLS[j]), borderRadius:6},
+      {label:'Revenue 2025 ajust.', data:rAdj, type:'line', borderColor:C.red, backgroundColor:rgba(C.red,.08), fill:true, tension:.4, pointRadius:5, borderWidth:2.5, borderDash:[5,4]},
+    ]},
+    options:{...baseOpts, plugins:{...baseOpts.plugins, tooltip:{...baseOpts.plugins.tooltip,
+      callbacks:{label:ctx=>`${ctx.dataset.label}: $${ctx.raw.toFixed(1)}M`}}},
+      scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v+'M',font:{size:11}}}}}
+  });
+}
+
+function buildOccAdr(){
+  dc('oa');
+  const idx=getIdx(), labs=idx.map(i=>D.meses[i]);
+  CHARTS['oa'] = new Chart(document.getElementById('cOccAdr'),{
+    type:'bar',
+    data:{labels:labs, datasets:[
+      {label:'OCC% 2026', data:idx.map(i=>D.cur.occ[i]), backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.85)), borderRadius:6, yAxisID:'y'},
+      {label:`OCC% ${compLabel()}`, data:idx.map(i=>compMode==='inf'?D.ly.occ[i]:D.ly.occ[i]), backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.3)), borderWidth:2, borderColor:idx.map((_,j)=>MCOLS[j]), borderRadius:6, yAxisID:'y'},
+      {label:'ADR 2026 ($k)', data:idx.map(i=>D.cur.adr[i]/1000), type:'line', borderColor:C.gold, backgroundColor:rgba(C.gold,.12), fill:true, tension:.4, pointRadius:5, borderWidth:2.5, yAxisID:'y2'},
+      {label:`ADR ${compLabel()} ($k)`, data:idx.map(i=>getLY_adr(i)/1000), type:'line', borderColor:C.teal, borderDash:[5,4], tension:.4, pointRadius:4, borderWidth:2, fill:false, yAxisID:'y2'},
+    ]},
+    options:{...baseOpts, scales:{
+      x:{grid:{display:false},ticks:{font:{size:11}}},
+      y:{position:'left',grid:{color:'#f1f5f9'},title:{display:true,text:'OCC %',font:{size:10}},ticks:{callback:v=>v+'%',font:{size:10}}},
+      y2:{position:'right',grid:{display:false},title:{display:true,text:'ADR $k',font:{size:10}},ticks:{callback:v=>'$'+v+'k',font:{size:10}}}
+    }}
+  });
+}
+
+function buildRevpar(){
+  dc('rp');
+  const idx=getIdx(), labs=idx.map(i=>D.meses[i]);
+  CHARTS['rp'] = new Chart(document.getElementById('cRevpar'),{
+    type:'bar',
+    data:{labels:labs, datasets:[
+      {label:'RevPAR 2026', data:idx.map(i=>D.cur.revpar[i]/1000), backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.85)), borderRadius:6},
+      {label:`RevPAR ${compLabel()}`, data:idx.map(i=>getLY_revpar(i)/1000), backgroundColor:idx.map((_,j)=>rgba(MCOLS[j],.3)), borderWidth:2, borderColor:idx.map((_,j)=>MCOLS[j]), borderRadius:6},
+    ]},
+    options:{...baseOpts,
+      plugins:{...baseOpts.plugins,tooltip:{...baseOpts.plugins.tooltip,callbacks:{label:ctx=>`${ctx.dataset.label}: $${(ctx.raw*1000).toLocaleString('es-AR')}`}}},
+      scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v+'k',font:{size:11}}}}}
+  });
+}
+
+function buildInflacion(){
+  dc('inf');
+  CHARTS['inf'] = new Chart(document.getElementById('cInflacion'),{
+    type:'bar',
+    data:{labels:D.meses, datasets:[
+      {label:'ADR 2026 real', data:D.cur.adr.map(v=>v/1000), backgroundColor:[rgba(C.navy,.85),rgba(C.gold,.85),rgba(C.teal,.85)], borderRadius:6},
+      {label:'ADR 2025 nominal', data:D.ly.adr.map(v=>v/1000), backgroundColor:[rgba(C.navy,.3),rgba(C.gold,.3),rgba(C.teal,.3)], borderWidth:2, borderColor:[C.navy,C.gold,C.teal], borderRadius:6},
+      {label:'ADR 2025 ajust. inflación', data:D.ly.adrAdj.map(v=>v/1000), type:'line', borderColor:C.red, backgroundColor:rgba(C.red,.08), fill:false, tension:.4, pointRadius:7, borderWidth:2.5, pointBackgroundColor:C.red},
+    ]},
+    options:{...baseOpts,
+      plugins:{...baseOpts.plugins,tooltip:{...baseOpts.plugins.tooltip,callbacks:{label:ctx=>`${ctx.dataset.label}: $${(ctx.raw*1000).toLocaleString('es-AR')}`}}},
+      scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v+'k',font:{size:11}}}}}
+  });
+}
+
+function buildCanal(){
+  dc('can');
+  const COLORS=['#0f2540','#c9952a','#2563eb','#0d7377','#7c3aed','#ea580c','#059669','#db2777','#ca8a04','#94a3b8'];
+  const d=D.canal2026;
+  const tot26 = d.labels.map((_,i)=>d.mar[i]+d.abr[i]+d.may[i]);
+  CHARTS['can'] = new Chart(document.getElementById('cCanal'),{
+    type:'bar',
+    data:{labels:d.labels, datasets:[
+      {label:'RN 2026', data:tot26, backgroundColor:COLORS.map(c=>rgba(c,.82)), borderRadius:6},
+      {label:'RN 2025', data:D.canal2025.total, backgroundColor:COLORS.map(c=>rgba(c,.28)), borderWidth:2, borderColor:COLORS, borderRadius:6},
+    ]},
+    options:{...baseOpts, indexAxis:'y',
+      scales:{x:{grid:{color:'#f1f5f9'},ticks:{font:{size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+  });
+}
+
+function buildPromo(){
+  dc('pro');
+  const PCOLS=['#94a3b8','#2563eb','#0d7377','#c9952a','#0f2540','#059669','#7c3aed','#ea580c','#db2777','#f59e0b','#64748b'];
+  CHARTS['pro'] = new Chart(document.getElementById('cPromo'),{
+    type:'doughnut',
+    data:{labels:D.promoTotal.labels, datasets:[{
+      data:D.promoTotal.total, backgroundColor:PCOLS.map(c=>rgba(c,.85)),
+      borderWidth:2, borderColor:'#fff', hoverOffset:8
+    }]},
+    options:{responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:10,padding:6}},
+        tooltip:{callbacks:{label:ctx=>{
+          const total=D.promoTotal.total.reduce((a,b)=>a+b,0);
+          return `${ctx.label}: ${ctx.raw} RN (${(ctx.raw/total*100).toFixed(1)}%)`;
+        }}}}}
+  });
+}
+
+function buildPromoMes(){
+  dc('pm');
+  const pm=D.promoMes;
+  const COLS=['#94a3b8','#2563eb','#0d7377','#c9952a','#0f2540','#059669','#7c3aed','#ea580c'];
+  CHARTS['pm'] = new Chart(document.getElementById('cPromoMes'),{
+    type:'bar',
+    data:{labels:['Marzo','Abril','Mayo'], datasets: pm.labels.map((l,i)=>({
+      label:l, data:[pm.mar[i],pm.abr[i],pm.may[i]], backgroundColor:rgba(COLS[i],.82), borderRadius:4, stack:'s'
+    }))},
+    options:{...baseOpts, scales:{
+      x:{grid:{display:false},ticks:{font:{size:11}},stacked:true},
+      y:{grid:{color:'#f1f5f9'},ticks:{font:{size:11}},stacked:true}
+    }}
+  });
+}
+
+function buildSpa(){
+  dc('spa');
+  CHARTS['spa'] = new Chart(document.getElementById('cSpa'),{
+    type:'bar',
+    data:{labels:D.meses, datasets:[
+      {label:'Ingresos 2026 ($M)', data:D.spa.ingr2026.map(v=>v/1e6), backgroundColor:[rgba(C.teal,.85),rgba(C.gold,.85),rgba(C.navy,.3)], borderRadius:6, yAxisID:'y2'},
+      {label:'Ingresos 2025 nominal ($M)', data:D.spa.ingr2025.map(v=>v/1e6), backgroundColor:[rgba(C.teal,.25),rgba(C.gold,.25),rgba(C.navy,.15)], borderWidth:2, borderColor:[C.teal,C.gold,C.navy], borderRadius:6, yAxisID:'y2'},
+      {label:'Tratamientos 2026', data:D.spa.trat2026, type:'line', borderColor:C.green, backgroundColor:rgba(C.green,.12), fill:true, tension:.4, pointRadius:6, borderWidth:2.5, yAxisID:'y'},
+      {label:'Tratamientos 2025', data:D.spa.trat2025, type:'line', borderColor:'#94a3b8', borderDash:[5,4], tension:.4, pointRadius:4, borderWidth:2, fill:false, yAxisID:'y'},
+    ]},
+    options:{...baseOpts, scales:{
+      x:{grid:{display:false},ticks:{font:{size:11}}},
+      y:{position:'left',title:{display:true,text:'Tratamientos',font:{size:10}},ticks:{font:{size:10}}},
+      y2:{position:'right',grid:{display:false},title:{display:true,text:'Ingresos $M',font:{size:10}},ticks:{callback:v=>'$'+v.toFixed(1)+'M',font:{size:10}}}
+    }}
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TABLA RESUMEN
+// ══════════════════════════════════════════════════════════════════
+function buildTabla(){
+  const rows=[
+    {label:'OCC %',        v26:D.cur.occ,    v25:D.ly.occ,    fmt:'pct'},
+    {label:'Room Nights',  v26:D.cur.rn,     v25:D.ly.rn,     fmt:'rn'},
+    {label:'Revenue ($M)', v26:D.cur.rev, v25:D.ly.rev, fmt:'M'},
+    {label:'ADR (ARS)',    v26:D.cur.adr,    v25:D.ly.adr,    fmt:'ars'},
+    {label:'RevPAR (ARS)', v26:D.cur.revpar, v25:D.ly.revpar, fmt:'ars'},
+  ];
+  document.getElementById('resumenBody').innerHTML = rows.map((r,ri)=>{
+    const bg=ri%2===0?'bg-white':'bg-slate-50';
+    return `<tr class="${bg} border-b border-slate-100">
+      <td class="px-4 py-2.5 font-semibold text-slate-700">${r.label}</td>
+      ${[0,1,2].map(i=>{
+        const d=diff(r.v26[i],r.v25[i]);
+        const cl=d>=0?'text-green-600':'text-red-600';
+        const sg=d>=0?'▲':'▼';
+        return `<td class="px-4 py-2.5 text-right font-bold text-slate-800">${fmt(r.v26[i],r.fmt)}</td>
+                <td class="px-4 py-2.5 text-right text-slate-500">${fmt(r.v25[i],r.fmt)}</td>
+                <td class="px-4 py-2.5 text-right"><span class="${cl} text-xs font-bold">${sg}${Math.abs(d).toFixed(1)}%</span></td>`;
+      }).join('')}
+    </tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FILTROS
+// ══════════════════════════════════════════════════════════════════
+function setMes(v,btn){
+  mesIdx = v==='todos'?null:v;
+  document.querySelectorAll('.filter-btn').forEach(b=>{
+    if(['todos',0,1,2].some(x=>b.getAttribute('onclick')?.includes(`'${x}'`)||b.getAttribute('onclick')?.includes(`(${x},`))) b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  renderAll();
+}
+function setComp(v,btn){
+  compMode=v;
+  ['btnLY','btnInf'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  btn.classList.add('active');
+  renderAll();
+}
+// ══════════════════════════════════════════════════════════════════
+// GRUPOS
+// ══════════════════════════════════════════════════════════════════
+function buildGruposKPIs(){
+  const g25=D.grupos.g2025, g26=D.grupos.g2026;
+  const rn25=g25.reduce((s,g)=>s+g.rn,0);
+  const rn26=g26.reduce((s,g)=>s+g.rn,0);
+  const n25=new Set(g25.map(g=>g.nombre)).size;
+  const n26=new Set(g26.map(g=>g.nombre)).size;
+  const dRN=((rn26-rn25)/rn25*100).toFixed(0);
+  const meses25=new Set(g25.map(g=>g.mes)).size;
+  const meses26=new Set(g26.map(g=>g.mes)).size;
+  const kpis=[
+    {icon:'🏨',label:'RN Grupos 2026',val:rn26+' RN',sub:'2025: '+rn25+' RN',
+      bd:`<span class="badge-up">▲ ${dRN}%</span>`},
+    {icon:'🏢',label:'Grupos activos',val:n26+' grupos',sub:'2025: '+n25+' grupos',
+      bd:`<span class="badge-up">+${n26-n25} nuevo${n26-n25>1?'s':''}</span>`},
+    {icon:'📅',label:'Meses con grupos',val:meses26+'/3 meses',sub:'2025: '+meses25+'/3 meses',
+      bd:`<span class="badge-up">+${meses26-meses25} mes${meses26-meses25>1?'es':''}</span>`},
+    {icon:'📈',label:'RN prom/grupo',val:Math.round(rn26/n26)+' RN',sub:'2025: '+Math.round(rn25/n25)+' RN',
+      bd:`<span class="${(rn26/n26)>=(rn25/n25)?'badge-up':'badge-dn'}">${(rn26/n26)>=(rn25/n25)?'▲':'▼'} ${Math.abs(Math.round(rn26/n26)-Math.round(rn25/n25))} RN</span>`},
+  ];
+  document.getElementById('grupoKpiGrid').innerHTML=kpis.map(k=>`
+    <div class="kpi-card p-4 border-l-4 border-rose-400">
+      <div class="flex items-start justify-between mb-1"><span class="text-xl">${k.icon}</span>${k.bd}</div>
+      <div class="text-2xl font-black text-slate-800 mt-1">${k.val}</div>
+      <div class="text-xs font-semibold text-slate-500 mt-0.5">${k.label}</div>
+      <div class="text-xs text-slate-400 mt-1">${k.sub}</div>
+    </div>`).join('');
+}
+
+function buildGrupos(){
+  dc('grp'); dc('grpM');
+
+  // ── Chart 1: RN por grupo (comparativo) ─────────────────────
+  // Unir todos los nombres
+  const names26=D.grupos.g2026.map(g=>g.nombre);
+  const names25=D.grupos.g2025.map(g=>g.nombre);
+  // Grupos exclusivos de cada año + compartidos
+  const allNames=[...new Set([...names26,...names25])];
+  const rn26map={}, rn25map={};
+  D.grupos.g2026.forEach(g=>{ rn26map[g.nombre]=(rn26map[g.nombre]||0)+g.rn; });
+  D.grupos.g2025.forEach(g=>{ rn25map[g.nombre]=(rn25map[g.nombre]||0)+g.rn; });
+
+  const GCOLS=['#FA575F','#0f2540','#0d7377','#7c3aed','#059669','#fc8287','#2563eb','#ea580c'];
+
+  CHARTS['grp']=new Chart(document.getElementById('cGrupos'),{
+    type:'bar',
+    data:{
+      labels:allNames,
+      datasets:[
+        {label:'RN 2026',data:allNames.map(n=>rn26map[n]||0),
+          backgroundColor:allNames.map((_,i)=>rgba(GCOLS[i%GCOLS.length],.85)),borderRadius:6},
+        {label:'RN 2025',data:allNames.map(n=>rn25map[n]||0),
+          backgroundColor:allNames.map((_,i)=>rgba(GCOLS[i%GCOLS.length],.25)),
+          borderWidth:2,borderColor:allNames.map((_,i)=>GCOLS[i%GCOLS.length]),borderRadius:6},
+      ]
+    },
+    options:{...baseOpts,indexAxis:'y',
+      plugins:{...baseOpts.plugins,
+        tooltip:{...baseOpts.plugins.tooltip,callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw} RN`}}},
+      scales:{x:{grid:{color:'#f1f5f9'},ticks:{font:{size:11}}},y:{grid:{display:false},ticks:{font:{size:11}}}}}
+  });
+
+  // ── Chart 2: evolución mensual ────────────────────────────────
+  const meses=['Marzo','Abril','Mayo'];
+  const mesMap25={3:0,4:0,5:0}, mesMap26={3:0,4:0,5:0};
+  D.grupos.g2025.forEach(g=>{ mesMap25[g.mes]+=g.rn; });
+  D.grupos.g2026.forEach(g=>{ mesMap26[g.mes]+=g.rn; });
+
+  // Stacked 2026 por grupo dentro de cada mes
+  const datasets26=D.grupos.g2026.map((g,i)=>({
+    label:g.nombre+' 2026',
+    data:[g.mes===3?g.rn:0, g.mes===4?g.rn:0, g.mes===5?g.rn:0],
+    backgroundColor:rgba(GCOLS[i%GCOLS.length],.82),
+    borderRadius:4, stack:'2026'
+  }));
+  const datasets25=D.grupos.g2025.map((g,i)=>({
+    label:g.nombre+' 2025',
+    data:[g.mes===3?g.rn:0, g.mes===4?g.rn:0, g.mes===5?g.rn:0],
+    backgroundColor:rgba(GCOLS[i%GCOLS.length],.3),
+    borderWidth:2,borderColor:GCOLS[i%GCOLS.length],
+    borderRadius:4, stack:'2025'
+  }));
+
+  CHARTS['grpM']=new Chart(document.getElementById('cGruposMes'),{
+    type:'bar',
+    data:{labels:meses.map(m=>m+'\n2026 / 2025'), datasets:[...datasets26,...datasets25]},
+    options:{...baseOpts,
+      plugins:{...baseOpts.plugins,
+        tooltip:{...baseOpts.plugins.tooltip,mode:'index',intersect:false},
+        legend:{labels:{font:{size:10},boxWidth:10,padding:6,
+          filter:item=>!item.text.includes('2025')||true}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:11}},stacked:true},
+        y:{grid:{color:'#f1f5f9'},ticks:{font:{size:11}},stacked:true,
+          title:{display:true,text:'Room Nights',font:{size:10}}}
+      }}
+  });
+}
+
+function renderAll(){
+  buildKPIs(); buildRevenue(); buildOccAdr(); buildRevpar();
+  buildInflacion(); buildCanal(); buildPromo(); buildPromoMes();
+  buildGruposKPIs(); buildGrupos();
+  buildSpa(); buildTabla();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// EXCEL UPLOAD — SheetJS
+// ══════════════════════════════════════════════════════════════════
+function handleDrop(e){
+  e.preventDefault(); document.getElementById('uploadZone').classList.remove('drag');
+  if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+}
+function handleFile(file){
+  if(!file) return;
+  document.getElementById('loader').style.display='flex';
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      parseExcel(wb);
+      document.getElementById('uploadLabel').textContent='✓ '+file.name;
+    }catch(err){ alert('Error procesando: '+err.message); }
+    document.getElementById('loader').style.display='none';
+    renderAll();
+  };
+  reader.onerror=()=>{ document.getElementById('loader').style.display='none'; };
+  reader.readAsArrayBuffer(file);
+}
+function parseExcel(wb){
+  const sn=wb.SheetNames;
+  // Hoja datos KPIs
+  const kpiName=sn.find(n=>/datos|cde|kpi|resumen/i.test(n))||sn[0];
+  const kRows=XLSX.utils.sheet_to_json(wb.Sheets[kpiName],{header:1,defval:''});
+  // Buscar bloque 2026
+  const i26=kRows.findIndex(r=>String(r[0]).toLowerCase().includes('2026'));
+  if(i26>=0){
+    const dataRows=kRows.slice(i26+1,i26+4);
+    dataRows.forEach((row,ri)=>{
+      const nums=row.slice(1).map(v=>parseFloat(String(v).replace(/[^0-9.\-]/g,''))||0).filter(v=>v>0);
+      if(nums.length>=5){
+        D.cur.rev[ri]=nums[0]; D.cur.adr[ri]=nums[1]; D.cur.rn[ri]=nums[2];
+        D.cur.occ[ri]=parseFloat(String(row[4]).replace('%',''))||D.cur.occ[ri];
+        D.cur.revpar[ri]=nums[4]||D.cur.revpar[ri];
+      }
+    });
+  }
+  // Hoja canal
+  const cName=sn.find(n=>/canal|origen/i.test(n));
+  if(cName){
+    const cRows=XLSX.utils.sheet_to_json(wb.Sheets[cName],{header:1,defval:''});
+    const map26={}, map25={};
+    cRows.forEach(row=>{
+      const lbl=String(row[0]).trim(), rn=parseInt(row[1])||0, fecha=String(row[2]);
+      if(!lbl||lbl==='Origen') return;
+      const yr=fecha.includes('2026')?26:fecha.includes('2025')?25:0;
+      const mo=parseInt(fecha.split('/')[0])||0;
+      if(yr===26&&mo>=3&&mo<=5){ map26[lbl]=(map26[lbl]||0)+rn; }
+      if(yr===25&&mo>=3&&mo<=5){ map25[lbl]=(map25[lbl]||0)+rn; }
+    });
+    if(Object.keys(map26).length>2){
+      const entries=Object.entries(map26).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      D.canal2026.labels=entries.map(e=>e[0].length>15?e[0].slice(0,15)+'…':e[0]);
+      D.canal2026.mar=[]; D.canal2026.abr=[]; D.canal2026.may=[];
+      entries.forEach(([lbl])=>{
+        const rAll=cRows.filter(r=>String(r[0]).trim()===lbl);
+        D.canal2026.mar.push(rAll.filter(r=>String(r[2]).includes('3/1/2026')||String(r[2]).includes('/3/2026')).reduce((s,r)=>s+(parseInt(r[1])||0),0));
+        D.canal2026.abr.push(rAll.filter(r=>String(r[2]).includes('4/1/2026')||String(r[2]).includes('/4/2026')).reduce((s,r)=>s+(parseInt(r[1])||0),0));
+        D.canal2026.may.push(rAll.filter(r=>String(r[2]).includes('5/1/2026')||String(r[2]).includes('/5/2026')).reduce((s,r)=>s+(parseInt(r[1])||0),0));
+      });
+      D.canal2025.labels=entries.map(e=>e[0].length>15?e[0].slice(0,15)+'…':e[0]);
+      D.canal2025.total=entries.map(([lbl])=>map25[lbl]||0);
+    }
+  }
+  // Hoja promo
+  const pName=sn.find(n=>/promo/i.test(n)&&!/por/i.test(n));
+  if(pName){
+    const pRows=XLSX.utils.sheet_to_json(wb.Sheets[pName],{header:1,defval:''});
+    const map={};
+    pRows.forEach(row=>{
+      const lbl=String(row[0]).trim(), rn=parseInt(row[1])||0, fecha=String(row[2]);
+      if(!lbl||lbl==='Organizacion') return;
+      if(fecha.includes('2026')) map[lbl]=(map[lbl]||0)+rn;
+    });
+    if(Object.keys(map).length>2){
+      const entries=Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,11);
+      D.promoTotal.labels=entries.map(e=>e[0].length>20?e[0].slice(0,20)+'…':e[0]);
+      D.promoTotal.total=entries.map(e=>e[1]);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('footerDate').textContent=new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'});
+renderAll();
+</script>
+</body>
+</html>
